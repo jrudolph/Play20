@@ -41,7 +41,7 @@ class Headers(protected var _headers: Seq[(String, String)]) {
   /**
    * Optionally returns the first header value associated with a key.
    */
-  def get(key: String): Option[String] = getAll(key).headOption
+  def get(key: String): Option[String] = _headers.find(_._1 equalsIgnoreCase key).map(_._2) //getAll(key).headOption
 
   /**
    * Retrieve all header values associated with the given key.
