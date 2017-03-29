@@ -19,6 +19,7 @@ import play.utils.UriEncoding
 
 import scala.collection.JavaConverters._
 import scala.collection.immutable.TreeMap
+import scala.collection.mutable.ListBuffer
 import scala.concurrent.ExecutionContext
 
 /**
@@ -287,16 +288,36 @@ case class Result(header: ResponseHeader, body: HttpEntity,
     flashBaker: CookieBaker[Flash] = new DefaultFlashCookieBaker(),
     requestHasFlash: Boolean = false
   ): Seq[Cookie] = {
-    val setCookieCookies = Cookies.decodeSetCookieHeader(header.headers.getOrElse(SET_COOKIE, ""))
-    val session = newSession.map { data =>
-      if (data.isEmpty) sessionBaker.discardCookie else sessionBaker.encodeAsCookie(data)
+    val cookies = new ListBuffer[Cookie]()
+
+    // add user cookies
+    header.headers.get(SET_COOKIE) match {
+      case Some(h) => cookies ++= Cookies.decodeSetCookieHeader(h)
+      case None => // no cookie
     }
-    val flash = newFlash.map { data =>
-      if (data.isEmpty) flashBaker.discardCookie else flashBaker.encodeAsCookie(data)
-    }.orElse {
-      if (requestHasFlash) Some(flashBaker.discardCookie) else None
+
+    // add session cookie
+    newSession match {
+      case Some(s) =>
+        cookies += {
+          if (s.data.nonEmpty) sessionBaker.encodeAsCookie(s)
+          else sessionBaker.discardCookie
+        }
+      case _ => // no cookie
     }
-    setCookieCookies ++ session ++ flash ++ newCookies
+
+    // add flash cookie
+    newFlash match {
+      case Some(data) =>
+        cookies += {
+          if (data.isEmpty) flashBaker.encodeAsCookie(data)
+          else flashBaker.discardCookie
+        }
+      case None =>
+        if (requestHasFlash) cookies += flashBaker.discardCookie
+    }
+
+    cookies.result()
   }
 }
 
