@@ -428,6 +428,7 @@ trait CookieBaker[T <: AnyRef] { self: CookieDataCodec =>
   }
 
   def discard = DiscardingCookie(COOKIE_NAME, path, domain, secure)
+  val discardCookie = discard.toCookie
 
   /**
    * Builds the cookie object from the given data map.

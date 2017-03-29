@@ -289,12 +289,12 @@ case class Result(header: ResponseHeader, body: HttpEntity,
   ): Seq[Cookie] = {
     val setCookieCookies = Cookies.decodeSetCookieHeader(header.headers.getOrElse(SET_COOKIE, ""))
     val session = newSession.map { data =>
-      if (data.isEmpty) sessionBaker.discard.toCookie else sessionBaker.encodeAsCookie(data)
+      if (data.isEmpty) sessionBaker.discardCookie else sessionBaker.encodeAsCookie(data)
     }
     val flash = newFlash.map { data =>
-      if (data.isEmpty) flashBaker.discard.toCookie else flashBaker.encodeAsCookie(data)
+      if (data.isEmpty) flashBaker.discardCookie else flashBaker.encodeAsCookie(data)
     }.orElse {
-      if (requestHasFlash) Some(flashBaker.discard.toCookie) else None
+      if (requestHasFlash) Some(flashBaker.discardCookie) else None
     }
     setCookieCookies ++ session ++ flash ++ newCookies
   }
