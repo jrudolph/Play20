@@ -81,7 +81,8 @@ private[server] class AkkaModelConversion(
       },
       request.protocol.value,
       headers,
-      TypedMap.empty
+      TypedMap.empty,
+      Map.empty
     )
   }
 

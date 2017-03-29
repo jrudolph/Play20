@@ -42,18 +42,13 @@ trait Request[+A] extends RequestHeader {
   def map[B](f: A => B): Request[B] = withBody(f(body))
 
   // Override the return type and default implementation of these RequestHeader methods
-  override def withConnection(newConnection: RemoteConnection): Request[A] =
-    new RequestImpl[A](newConnection, method, target, version, headers, attrs, body)
-  override def withMethod(newMethod: String): Request[A] =
-    new RequestImpl[A](connection, newMethod, target, version, headers, attrs, body)
-  override def withTarget(newTarget: RequestTarget): Request[A] =
-    new RequestImpl[A](connection, method, newTarget, version, headers, attrs, body)
-  override def withVersion(newVersion: String): Request[A] =
-    new RequestImpl[A](connection, method, target, newVersion, headers, attrs, body)
-  override def withHeaders(newHeaders: Headers): Request[A] =
-    new RequestImpl[A](connection, method, target, version, newHeaders, attrs, body)
-  override def withAttrs(newAttrs: TypedMap): Request[A] =
-    new RequestImpl[A](connection, method, target, version, headers, newAttrs, body)
+  override def withConnection(newConnection: RemoteConnection): Request[A]
+  override def withMethod(newMethod: String): Request[A]
+  override def withTarget(newTarget: RequestTarget): Request[A]
+  override def withVersion(newVersion: String): Request[A]
+  override def withHeaders(newHeaders: Headers): Request[A]
+  override def withAttrs(newAttrs: TypedMap): Request[A]
+  override def withTags(tags: Map[String, String]): Request[A]
 }
 
 object Request {
@@ -71,10 +66,20 @@ object Request {
  * @tparam A The type of the body content.
  */
 private[play] class RequestImpl[+A](
-  override val connection: RemoteConnection,
-  override val method: String,
-  override val target: RequestTarget,
-  override val version: String,
-  override val headers: Headers,
-  override val attrs: TypedMap,
-  override val body: A) extends Request[A]
+    override val connection: RemoteConnection,
+    override val method: String,
+    override val target: RequestTarget,
+    override val version: String,
+    override val headers: Headers,
+    override val attrs: TypedMap,
+    val tags: Map[String, String],
+    override val body: A) extends Request[A] {
+
+  def withTags(tags: Map[String, String]): Request[A] = new RequestImpl(connection, method, target, version, headers, attrs, tags, body)
+  def withAttrs(attrs: play.api.libs.typedmap.TypedMap): Request[A] = new RequestImpl(connection, method, target, version, headers, attrs, tags, body)
+  def withConnection(connection: play.api.mvc.request.RemoteConnection): Request[A] = new RequestImpl(connection, method, target, version, headers, attrs, tags, body)
+  def withHeaders(headers: play.api.mvc.Headers): Request[A] = new RequestImpl(connection, method, target, version, headers, attrs, tags, body)
+  def withMethod(method: String): Request[A] = new RequestImpl(connection, method, target, version, headers, attrs, tags, body)
+  def withTarget(target: play.api.mvc.request.RequestTarget): Request[A] = new RequestImpl(connection, method, target, version, headers, attrs, tags, body)
+  def withVersion(version: String): Request[A] = new RequestImpl(connection, method, target, version, headers, attrs, tags, body)
+}

@@ -165,7 +165,8 @@ private[server] class NettyModelConversion(
       // Send a tag so our tests can tell which kind of server we're using.
       // We only do this for the "non-default" engine, so we used to tag
       // akka-http explicitly, so that benchmarking isn't affected by this.
-      TypedMap(RequestAttrKey.Tags -> Map("HTTP_SERVER" -> "netty"))
+      TypedMap(RequestAttrKey.Tags -> Map("HTTP_SERVER" -> "netty")),
+      Map.empty
     )
   }
 

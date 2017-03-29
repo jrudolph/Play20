@@ -39,6 +39,7 @@ class FakeRequest[A](request: Request[A]) extends Request[A] {
   override def headers: Headers = request.headers
   override def body: A = request.body
   override def attrs: TypedMap = request.attrs
+  override def tags: Map[String, String] = request.tags
 
   override def withConnection(newConnection: RemoteConnection): FakeRequest[A] =
     new FakeRequest(request.withConnection(newConnection))
@@ -52,6 +53,8 @@ class FakeRequest[A](request: Request[A]) extends Request[A] {
     new FakeRequest(request.withHeaders(newHeaders))
   override def withAttrs(attrs: TypedMap): FakeRequest[A] =
     new FakeRequest(request.withAttrs(attrs))
+  override def withTags(tags: Map[String, String]): FakeRequest[A] =
+    new FakeRequest(request.withTags(tags))
   override def withBody[B](body: B): FakeRequest[B] =
     new FakeRequest(request.withBody(body))
 

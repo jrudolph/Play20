@@ -21,6 +21,7 @@ class WrappedRequest[+A](request: Request[A]) extends Request[A] {
   override def headers: Headers = request.headers
   override def body: A = request.body
   override def attrs: TypedMap = request.attrs
+  override def tags: Map[String, String] = request.tags
 
   /**
    * Create a copy of this wrapper, but wrapping a new request.
@@ -43,4 +44,6 @@ class WrappedRequest[+A](request: Request[A]) extends Request[A] {
     newWrapper(request.withAttrs(newAttrs))
   override def withBody[B](body: B): WrappedRequest[B] =
     newWrapper(request.withBody(body))
+  override def withTags(tags: Map[String, String]): WrappedRequest[A] =
+    newWrapper(request.withTags(tags))
 }
