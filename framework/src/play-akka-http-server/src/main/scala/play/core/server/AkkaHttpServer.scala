@@ -245,8 +245,7 @@ class AkkaHttpServer(
       case Some(s) => actionAccumulator.run(s)
     }
     val responseFuture: Future[HttpResponse] = resultFuture.fast.flatMap { result =>
-      val cleanedResult: Result = resultUtils.prepareCookies(taggedRequestHeader, result)
-      modelConversion.convertResult(taggedRequestHeader, cleanedResult, request.protocol, errorHandler)
+      modelConversion.convertResult(taggedRequestHeader, result, request.protocol, errorHandler)
     }
     responseFuture
   }

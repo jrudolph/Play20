@@ -180,13 +180,14 @@ private[server] class AkkaModelConversion(
    */
   def convertResult(
     requestHeaders: RequestHeader,
-    unvalidated: Result,
+    originalResult: Result,
     protocol: HttpProtocol,
     errorHandler: HttpErrorHandler)(implicit mat: Materializer): Future[HttpResponse] = {
 
     import play.core.Execution.Implicits.trampoline
+    val result: Result = resultUtils.prepareCookies(requestHeaders, originalResult)
 
-    resultUtils.resultConversionWithErrorHandling(requestHeaders, unvalidated, errorHandler) { unvalidated =>
+    resultUtils.resultConversionWithErrorHandling(requestHeaders, result, errorHandler) { unvalidated =>
       // Convert result
       resultUtils.validateResult(requestHeaders, unvalidated, errorHandler).fast.map { validated: Result =>
         val convertedHeaders: AkkaHttpHeaders = convertResponseHeaders(validated.header.headers)
