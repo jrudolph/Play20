@@ -145,14 +145,13 @@ private[server] class AkkaModelConversion(
     }
 
     var requestUri: String = null
-    val hs = request.headers.filter {
-      case `Raw-Request-URI`(u) =>
-        requestUri = u
-        false // exclude the synthetic header from effective headers
-      case _ => true
+    val hs = request.headers.foreach {
+      case `Raw-Request-URI`(u) => requestUri = u
+      case _ =>
     }
+    if (requestUri == null) requestUri = request.uri.toString
 
-    AkkaRequestHeaders(request, contentLength, contentType, hs, isChunked)
+    AkkaRequestHeaders(request, requestUri, contentLength, contentType, request.headers, isChunked)
   }
 
   /**
@@ -300,19 +299,12 @@ private[server] class AkkaModelConversion(
 
 final case class AkkaRequestHeaders(
     request: HttpRequest,
+    uri: String,
     override val contentLength: Long,
     contentType: Option[String],
     hs: immutable.Seq[HttpHeader],
     isChunked: Boolean
 ) extends Headers(null) {
-
-  val uri: String =
-    hs.collectFirst {
-      case `Raw-Request-URI`(u) => u
-    } getOrElse {
-      // logger.warn("Can't get raw request URI. Raw-Request-URI was missing.")
-      request.uri.toString
-    }
 
   override def headers: Seq[(String, String)] =
     if (_headers ne null) _headers
