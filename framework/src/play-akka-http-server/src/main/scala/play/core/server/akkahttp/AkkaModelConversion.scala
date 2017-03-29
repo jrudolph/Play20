@@ -126,18 +126,18 @@ private[server] class AkkaModelConversion(
    */
   private def convertRequestHeadersAkka(request: HttpRequest): AkkaRequestHeaders = {
     var contentLength: Long = -1L
-    var contentType: ContentType = null
+    val contentType: Option[String] =
+      if (request.entity.isKnownEmpty()) None
+      else Some(request.entity.contentType.value)
     var isChunked = false
 
     request.entity match {
       case HttpEntity.Strict(cType, data) =>
         if (request.method.requestEntityAcceptance == RequestEntityAcceptance.Expected || data.nonEmpty) {
-          contentType = cType
           contentLength = data.length
         }
       case HttpEntity.Default(cType, cLength, _) =>
         if (request.method.requestEntityAcceptance == RequestEntityAcceptance.Expected || cLength > 0) {
-          contentType = cType
           contentLength = cLength
         }
       case _: HttpEntity.Chunked =>
@@ -301,7 +301,7 @@ private[server] class AkkaModelConversion(
 final case class AkkaRequestHeaders(
     request: HttpRequest,
     override val contentLength: Long,
-    contentType: ContentType,
+    contentType: Option[String],
     hs: immutable.Seq[HttpHeader],
     isChunked: Boolean
 ) extends Headers(null) {
@@ -330,8 +330,8 @@ final case class AkkaRequestHeaders(
 
   override def get(key: String): Option[String] =
     key match {
-      case HeaderNames.CONTENT_LENGTH => Some(contentLength.toString)
-      case HeaderNames.CONTENT_TYPE => Some(contentType.value)
+      case HeaderNames.CONTENT_LENGTH => if (contentLength > 0) Some(contentLength.toString) else None
+      case HeaderNames.CONTENT_TYPE => contentType
       case _ =>
         val lower = key.toLowerCase(Locale.ROOT)
         hs.collectFirst({ case h if h.lowercaseName == lower => h.value })
