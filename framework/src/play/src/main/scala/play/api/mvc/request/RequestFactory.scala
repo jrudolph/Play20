@@ -29,9 +29,7 @@ trait RequestFactory {
    * existing `RequestHeader`. The factory may modify the copied
    * values to produce a modified `RequestHeader`.
    */
-  def copyRequestHeader(rh: RequestHeader): RequestHeader = {
-    createRequestHeader(rh.connection, rh.method, rh.target, rh.version, rh.headers, rh.attrs)
-  }
+  def copyRequestHeader(rh: RequestHeader): RequestHeader = rh
 
   /**
    * Create a `Request` with a body. By default this just calls
@@ -71,7 +69,7 @@ object RequestFactory {
       version: String,
       headers: Headers,
       attrs: TypedMap): RequestHeader =
-      new RequestHeaderImpl(connection, method, target, version, headers, attrs)
+      new RequestHeaderImpl(connection, method, target, version, headers, attrs, Map.empty)
   }
 }
 
@@ -121,6 +119,6 @@ class DefaultRequestFactory @Inject() (
       RequestAttrKey.Session -> sessionCell,
       RequestAttrKey.Flash -> flashCell
     )
-    new RequestHeaderImpl(connection, method, target, version, headers, updatedAttrMap)
+    new RequestHeaderImpl(connection, method, target, version, headers, updatedAttrMap, Map.empty)
   }
 }

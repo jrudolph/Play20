@@ -19,6 +19,7 @@ import play.utils.UriEncoding
 
 import scala.collection.JavaConverters._
 import scala.collection.immutable.TreeMap
+import scala.collection.mutable.ListBuffer
 import scala.concurrent.ExecutionContext
 
 /**
@@ -275,24 +276,48 @@ case class Result(header: ResponseHeader, body: HttpEntity,
     flashBaker: CookieBaker[Flash] = new DefaultFlashCookieBaker(),
     requestHasFlash: Boolean = false): Result = {
 
-    val allCookies = {
-      val setCookieCookies = Cookies.decodeSetCookieHeader(header.headers.getOrElse(SET_COOKIE, ""))
-      val session = newSession.map { data =>
-        if (data.isEmpty) sessionBaker.discard.toCookie else sessionBaker.encodeAsCookie(data)
-      }
-      val flash = newFlash.map { data =>
-        if (data.isEmpty) flashBaker.discard.toCookie else flashBaker.encodeAsCookie(data)
-      }.orElse {
-        if (requestHasFlash) Some(flashBaker.discard.toCookie) else None
-      }
-      setCookieCookies ++ session ++ flash ++ newCookies
+    val cookies = allCookies(cookieHeaderEncoding, sessionBaker, flashBaker, requestHasFlash)
+    if (cookies.isEmpty) this
+    else withHeaders(SET_COOKIE -> Cookies.encodeSetCookieHeader(cookies))
+  }
+
+  /** Returns a sequence of cookies for this Result */
+  private[play] def allCookies(
+    cookieHeaderEncoding: CookieHeaderEncoding = new DefaultCookieHeaderEncoding(),
+    sessionBaker: CookieBaker[Session] = new DefaultSessionCookieBaker(),
+    flashBaker: CookieBaker[Flash] = new DefaultFlashCookieBaker(),
+    requestHasFlash: Boolean = false
+  ): Seq[Cookie] = {
+    val cookies = new ListBuffer[Cookie]()
+
+    // add user cookies
+    header.headers.get(SET_COOKIE) match {
+      case Some(h) => cookies ++= Cookies.decodeSetCookieHeader(h)
+      case None => // no cookie
     }
 
-    if (allCookies.isEmpty) {
-      this
-    } else {
-      withHeaders(SET_COOKIE -> Cookies.encodeSetCookieHeader(allCookies))
+    // add session cookie
+    newSession match {
+      case Some(s) =>
+        cookies += {
+          if (s.data.nonEmpty) sessionBaker.encodeAsCookie(s)
+          else sessionBaker.discardCookie
+        }
+      case _ => // no cookie
     }
+
+    // add flash cookie
+    newFlash match {
+      case Some(data) =>
+        cookies += {
+          if (data.isEmpty) flashBaker.encodeAsCookie(data)
+          else flashBaker.discardCookie
+        }
+      case None =>
+        if (requestHasFlash) cookies += flashBaker.discardCookie
+    }
+
+    cookies.result()
   }
 }
 

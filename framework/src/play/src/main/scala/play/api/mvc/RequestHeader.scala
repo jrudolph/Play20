@@ -24,8 +24,7 @@ trait RequestHeader {
    */
   def connection: RemoteConnection
 
-  def withConnection(newConnection: RemoteConnection): RequestHeader =
-    new RequestHeaderImpl(newConnection, method, target, version, headers, attrs)
+  def withConnection(newConnection: RemoteConnection): RequestHeader
 
   /**
    * The request id. The request id is stored as an attribute indexed by [[play.api.mvc.request.RequestAttrKey.Id]].
@@ -37,7 +36,13 @@ trait RequestHeader {
    * [[play.api.mvc.request.RequestAttrKey.Tags]]. If the attribute is not present then the tags are assumed to be empty.
    */
   @deprecated("Use typed attributes instead, see `attrs`", "2.6.0")
-  final def tags: Map[String, String] = attrs.get(RequestAttrKey.Tags).getOrElse(Map.empty)
+  def tags: Map[String, String] //= attrs.get(RequestAttrKey.Tags).getOrElse(Map.empty)
+
+  // TODO we could do it here instead in Headers, would be cleaner
+  //  /**
+  //   * Content lenght of contained entity. `0` if no entity is present.
+  //   */
+  //  def contentLength: Long 
 
   /**
    * The HTTP method.
@@ -47,8 +52,7 @@ trait RequestHeader {
   /**
    * Return a new copy of the request with its method changed.
    */
-  def withMethod(newMethod: String): RequestHeader =
-    new RequestHeaderImpl(connection, newMethod, target, version, headers, attrs)
+  def withMethod(newMethod: String): RequestHeader
 
   /**
    * The target of the HTTP request, i.e. the URI or path that was
@@ -59,8 +63,7 @@ trait RequestHeader {
   /**
    * Return a new copy of the request with its target changed.
    */
-  def withTarget(newTarget: RequestTarget): RequestHeader =
-    new RequestHeaderImpl(connection, method, newTarget, version, headers, attrs)
+  def withTarget(newTarget: RequestTarget): RequestHeader
 
   /**
    * The complete request URI, containing both path and query string.
@@ -86,8 +89,7 @@ trait RequestHeader {
   /**
    * Return a new copy of the request with its HTTP version changed.
    */
-  def withVersion(newVersion: String): RequestHeader =
-    new RequestHeaderImpl(connection, method, target, newVersion, headers, attrs)
+  def withVersion(newVersion: String): RequestHeader
 
   /**
    * The parsed query string. This method delegates to `target.queryMap`.
@@ -102,8 +104,7 @@ trait RequestHeader {
   /**
    * The remote connection that made the request.
    */
-  def withHeaders(newHeaders: Headers): RequestHeader =
-    new RequestHeaderImpl(connection, method, target, version, newHeaders, attrs)
+  def withHeaders(newHeaders: Headers): RequestHeader
 
   /**
    * The client IP address.
@@ -138,8 +139,7 @@ trait RequestHeader {
    * @param newAttrs The new attributes to add.
    * @return The new version of this object with the attributes attached.
    */
-  def withAttrs(newAttrs: TypedMap): RequestHeader =
-    new RequestHeaderImpl(connection, method, target, version, headers, newAttrs)
+  def withAttrs(newAttrs: TypedMap): RequestHeader
 
   // -- Computed
 
@@ -160,7 +160,7 @@ trait RequestHeader {
    */
   def hasBody: Boolean = {
     import HeaderNames._
-    headers.get(CONTENT_LENGTH).isDefined || headers.get(TRANSFER_ENCODING).isDefined
+    headers.hasHeader(CONTENT_LENGTH) || headers.hasHeader(TRANSFER_ENCODING)
   }
 
   /**
@@ -257,6 +257,8 @@ trait RequestHeader {
     copy(tags = tags + (tagName -> tagValue))
   }
 
+  def withTags(tags: Map[String, String]): RequestHeader
+
   /**
    * Attach a body to this header.
    *
@@ -265,7 +267,7 @@ trait RequestHeader {
    * @return A new request with the body attached to the header.
    */
   def withBody[A](body: A): Request[A] =
-    new RequestImpl[A](connection, method, target, version, headers, attrs, body)
+    new RequestImpl[A](connection, method, target, version, headers, attrs, tags, body)
 
   /**
    * Copy the request.
@@ -291,7 +293,7 @@ trait RequestHeader {
       newHeader = newHeader.withAttrs(newHeader.attrs.updated(RequestAttrKey.Id, (id: Long)))
     }
     if (tags != null) {
-      newHeader = newHeader.withAttrs(newHeader.attrs.updated(RequestAttrKey.Tags, tags))
+      newHeader = newHeader.withTags(tags)
     }
     if (uri != null) {
       newHeader = newHeader.withTarget(newHeader.target.withUriString(uri))
@@ -355,9 +357,18 @@ object RequestHeader {
  * A standard implementation of a RequestHeader.
  */
 private[play] class RequestHeaderImpl(
-  override val connection: RemoteConnection,
-  override val method: String,
-  override val target: RequestTarget,
-  override val version: String,
-  override val headers: Headers,
-  override val attrs: TypedMap) extends RequestHeader
+    override val connection: RemoteConnection,
+    override val method: String,
+    override val target: RequestTarget,
+    override val version: String,
+    override val headers: Headers,
+    override val attrs: TypedMap,
+    val tags: Map[String, String]) extends RequestHeader {
+  def withTags(tags: Map[String, String]): RequestHeader = new RequestHeaderImpl(connection, method, target, version, headers, attrs, tags)
+  def withAttrs(attrs: play.api.libs.typedmap.TypedMap): play.api.mvc.RequestHeader = new RequestHeaderImpl(connection, method, target, version, headers, attrs, tags)
+  def withConnection(connection: play.api.mvc.request.RemoteConnection): play.api.mvc.RequestHeader = new RequestHeaderImpl(connection, method, target, version, headers, attrs, tags)
+  def withHeaders(headers: play.api.mvc.Headers): play.api.mvc.RequestHeader = new RequestHeaderImpl(connection, method, target, version, headers, attrs, tags)
+  def withMethod(method: String): play.api.mvc.RequestHeader = new RequestHeaderImpl(connection, method, target, version, headers, attrs, tags)
+  def withTarget(target: play.api.mvc.request.RequestTarget): play.api.mvc.RequestHeader = new RequestHeaderImpl(connection, method, target, version, headers, attrs, tags)
+  def withVersion(version: String): play.api.mvc.RequestHeader = new RequestHeaderImpl(connection, method, target, version, headers, attrs, tags)
+}

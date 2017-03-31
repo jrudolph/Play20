@@ -4,22 +4,27 @@
 package play.core.server.akkahttp
 
 import java.net.{ InetAddress, InetSocketAddress, URI }
+import java.util.Locale
 
+import akka.http.javadsl.model.headers.RawRequestURI
 import akka.http.scaladsl.model._
 import akka.http.scaladsl.model.headers._
+import akka.http.scaladsl.util.FastFuture._
 import akka.stream.Materializer
 import akka.stream.scaladsl.Source
 import akka.util.ByteString
 import play.api.Logger
 import play.api.http.HeaderNames._
-import play.api.http.{ HttpChunk, HttpErrorHandler, Status, HttpEntity => PlayHttpEntity }
+import play.api.http.{ HeaderNames, HttpChunk, HttpErrorHandler, Status, HttpEntity => PlayHttpEntity }
 import play.api.libs.typedmap.TypedMap
 import play.api.mvc._
 import play.api.mvc.request.{ RemoteConnection, RequestTarget }
 import play.core.server.common.{ ForwardedHeaderHandler, ServerResultUtils }
+import play.core.utils.CaseInsensitiveOrdered
 
 import scala.collection.immutable
 import scala.collection.mutable.ListBuffer
+import scala.collection.immutable.TreeSet
 import scala.concurrent.Future
 
 /**
@@ -55,7 +60,7 @@ private[server] class AkkaModelConversion(
     secureProtocol: Boolean,
     request: HttpRequest): RequestHeader = {
 
-    val (headers, _uriString) = convertRequestHeaders(request)
+    val headers = convertRequestHeadersAkka(request)
     val remoteAddressArg = remoteAddress // Avoid clash between method arg and RequestHeader field
 
     new RequestHeaderImpl(
@@ -69,14 +74,15 @@ private[server] class AkkaModelConversion(
         headers),
       request.method.name,
       new RequestTarget {
-        override lazy val uri: URI = new URI(uriString)
-        override lazy val uriString: String = _uriString
+        override lazy val uri: URI = new URI(headers.uri)
+        override lazy val uriString: String = headers.uri
         override lazy val path: String = request.uri.path.toString
         override lazy val queryMap: Map[String, Seq[String]] = request.uri.query().toMultiMap
       },
       request.protocol.value,
       headers,
-      TypedMap.empty
+      TypedMap.empty,
+      Map.empty
     )
   }
 
@@ -117,6 +123,39 @@ private[server] class AkkaModelConversion(
   }
 
   /**
+   * Convert the request headers of an Akka `HttpRequest` to a Play `Headers` object.
+   */
+  private def convertRequestHeadersAkka(request: HttpRequest): AkkaRequestHeaders = {
+    var contentLength: Long = -1L
+    val contentType: Option[String] =
+      if (request.entity.isKnownEmpty()) None
+      else Some(request.entity.contentType.value)
+    var isChunked = false
+
+    request.entity match {
+      case HttpEntity.Strict(cType, data) =>
+        if (request.method.requestEntityAcceptance == RequestEntityAcceptance.Expected || data.nonEmpty) {
+          contentLength = data.length
+        }
+      case HttpEntity.Default(cType, cLength, _) =>
+        if (request.method.requestEntityAcceptance == RequestEntityAcceptance.Expected || cLength > 0) {
+          contentLength = cLength
+        }
+      case _: HttpEntity.Chunked =>
+        isChunked = true
+    }
+
+    var requestUri: String = null
+    val hs = request.headers.foreach {
+      case `Raw-Request-URI`(u) => requestUri = u
+      case _ =>
+    }
+    if (requestUri == null) requestUri = request.uri.toString
+
+    AkkaRequestHeaders(request, requestUri, contentLength, contentType, request.headers, isChunked)
+  }
+
+  /**
    * Convert an Akka `HttpRequest` to an `Enumerator` of the request body.
    */
   private def convertRequestBody(
@@ -142,22 +181,21 @@ private[server] class AkkaModelConversion(
    */
   def convertResult(
     requestHeaders: RequestHeader,
-    unvalidated: Result,
+    originalResult: Result,
     protocol: HttpProtocol,
     errorHandler: HttpErrorHandler)(implicit mat: Materializer): Future[HttpResponse] = {
 
     import play.core.Execution.Implicits.trampoline
+    val result: Result = resultUtils.prepareCookies(requestHeaders, originalResult)
 
-    resultUtils.resultConversionWithErrorHandling(requestHeaders, unvalidated, errorHandler) { unvalidated =>
+    resultUtils.resultConversionWithErrorHandling(requestHeaders, result, errorHandler) { unvalidated =>
       // Convert result
-      resultUtils.validateResult(requestHeaders, unvalidated, errorHandler).map { validated: Result =>
-        val convertedHeaders: AkkaHttpHeaders = convertResponseHeaders(validated.header.headers)
-        val entity = convertResultBody(requestHeaders, convertedHeaders, validated, protocol)
-        val connectionHeader = resultUtils.determineConnectionHeader(requestHeaders, validated)
-        val closeHeader = connectionHeader.header.map(Connection(_))
+      resultUtils.validateResult(requestHeaders, unvalidated, errorHandler).fast.map { validated: Result =>
+        val convertedHeaders = convertHeaders(validated.header.headers)
+        val entity = convertResultBody(requestHeaders, validated, protocol)
         val response = HttpResponse(
           status = validated.header.status,
-          headers = convertedHeaders.misc ++ closeHeader,
+          headers = convertedHeaders,
           entity = entity,
           protocol = protocol
         )
@@ -187,7 +225,6 @@ private[server] class AkkaModelConversion(
 
   def convertResultBody(
     requestHeaders: RequestHeader,
-    convertedHeaders: AkkaHttpHeaders,
     result: Result,
     protocol: HttpProtocol): ResponseEntity = {
 
@@ -216,45 +253,80 @@ private[server] class AkkaModelConversion(
     }
   }
 
-  private def convertHeaders(headers: Iterable[(String, String)]): immutable.Seq[HttpHeader] = {
-    headers.map {
-      case (name, value) =>
-        HttpHeader.parse(name, value) match {
-          case HttpHeader.ParsingResult.Ok(header, errors /* errors are ignored if Ok */ ) =>
-            header
-          case HttpHeader.ParsingResult.Error(error) =>
-            sys.error(s"Error parsing header: $error")
-        }
-    }.to[immutable.Seq]
+  private def convertHeaders(headers: Iterable[(String, String)]): immutable.Seq[HttpHeader] =
+    headers.collect {
+      case (name, value) if name != TRANSFER_ENCODING =>
+        RawHeader(name, value)
+    }(collection.breakOut): Vector[HttpHeader]
+}
+
+final case class AkkaRequestHeaders(
+    request: HttpRequest,
+    uri: String,
+    override val contentLength: Long,
+    contentType: Option[String],
+    hs: immutable.Seq[HttpHeader],
+    isChunked: Boolean
+) extends Headers(null) {
+
+  override def headers: Seq[(String, String)] =
+    if (_headers ne null) _headers
+    else {
+      _headers = hs.map(h => h.name() -> h.value)
+      _headers
+    }
+
+  // note that these are rarely used, mostly just in tests
+  override def add(headers: (String, String)*): AkkaRequestHeaders =
+    copy(hs = this.hs ++ raw(headers))
+
+  override def apply(key: String): String =
+    get(key).getOrElse(throw new RuntimeException(s"Header with name ${key} not found!"))
+
+  override def get(key: String): Option[String] =
+    key match {
+      case HeaderNames.CONTENT_LENGTH => if (contentLength > 0) Some(contentLength.toString) else None
+      case HeaderNames.CONTENT_TYPE => contentType
+      case HeaderNames.TRANSFER_ENCODING => if (isChunked) Some("chunked") else None
+      case _ =>
+        val lower = key.toLowerCase(Locale.ROOT)
+        hs.collectFirst({ case h if h.lowercaseName == lower => h.value })
+    }
+
+  override private[play] def hasHeader(key: String): Boolean = key match {
+    case HeaderNames.CONTENT_LENGTH => contentLength > 0
+    case HeaderNames.TRANSFER_ENCODING => isChunked
+    case _ => get(key).isDefined
   }
 
-  /**
-   * A representation of Akka HTTP headers separate from an `HTTPMessage`.
-   * Akka HTTP treats some headers specially and these are split out into
-   * separate values.
-   *
-   * @param misc General headers. Guaranteed not to contain any of the special
-   * headers stored in the other values.
-   */
-  case class AkkaHttpHeaders(
-    misc: immutable.Seq[HttpHeader],
-    transferEncoding: Option[immutable.Seq[TransferEncoding]])
+  // note that these are rarely used, mostly just in tests
+  override def getAll(key: String): immutable.Seq[String] =
+    hs.collect({ case h if h.is(key) => h.value })
 
-  /**
-   * Convert Play response headers into `HttpHeader` objects, then separate
-   * out any special headers.
-   */
-  private def convertResponseHeaders(
-    playHeaders: Map[String, String]): AkkaHttpHeaders = {
-    val rawHeaders: Iterable[(String, String)] = resultUtils.splitSetCookieHeaders(playHeaders)
-    val convertedHeaders: Seq[HttpHeader] = convertHeaders(rawHeaders)
-    val emptyHeaders = AkkaHttpHeaders(immutable.Seq.empty, None)
-    convertedHeaders.foldLeft(emptyHeaders) {
-      case (accum, te: `Transfer-Encoding`) =>
-        accum.copy(transferEncoding = Some(te.encodings))
-      case (accum, miscHeader) =>
-        accum.copy(misc = accum.misc :+ miscHeader)
+  override lazy val keys: immutable.Set[String] =
+    hs.map(_.name).toSet
+
+  // note that these are rarely used, mostly just in tests
+  override def remove(keys: String*): Headers =
+    copy(hs = hs.filterNot(keys.contains))
+
+  // note that these are rarely used, mostly just in tests
+  override def replace(headers: (String, String)*): Headers = {
+    val replaced = hs.filterNot(h => headers.exists(rm => h.is(rm._1))) ++ raw(headers)
+    copy(hs = replaced)
+  }
+
+  override def equals(other: Any): Boolean = {
+    other match {
+      case that: AkkaRequestHeaders => that.request == this.request
+      case _ => false
     }
   }
+
+  private def raw(headers: Seq[(String, String)]): Seq[RawHeader] =
+    headers.map(t => RawHeader(t._1, t._2))
+
+  override def hashCode: Int =
+    request.hashCode() // somewhat lazy way but should be correct
 
 }

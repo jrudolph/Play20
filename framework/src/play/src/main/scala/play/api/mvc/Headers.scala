@@ -6,6 +6,7 @@ package play.api.mvc
 import java.util.Locale
 
 import play.core.utils.CaseInsensitiveOrdered
+import play.mvc.Http.HeaderNames
 
 import scala.collection.immutable.{ TreeMap, TreeSet }
 
@@ -17,6 +18,10 @@ import scala.collection.immutable.{ TreeMap, TreeSet }
  * it lazily.
  */
 class Headers(protected var _headers: Seq[(String, String)]) {
+
+  /** INTERNAL API: Content-Length or -1 if not known. */
+  private[play] def contentLength: Long =
+    get(HeaderNames.CONTENT_LENGTH).map(_.toLong).getOrElse(-1)
 
   /**
    * The headers as a sequence of name-value pairs.
@@ -42,6 +47,9 @@ class Headers(protected var _headers: Seq[(String, String)]) {
    * Optionally returns the first header value associated with a key.
    */
   def get(key: String): Option[String] = getAll(key).headOption
+
+  /** Returns whether the given header is defines */
+  private[play] def hasHeader(key: String): Boolean = toMap.contains(key)
 
   /**
    * Retrieve all header values associated with the given key.

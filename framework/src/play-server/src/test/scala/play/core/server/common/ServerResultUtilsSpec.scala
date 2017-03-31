@@ -89,7 +89,7 @@ class ServerResultUtilsSpec extends Specification {
 
     val header = new RequestHeaderImpl(
       RemoteConnection("", false, None), "", RequestTarget("", "", Map.empty), "",
-      Headers(), TypedMap.empty)
+      Headers(), TypedMap.empty, Map.empty)
 
     def hasNoEntity(response: Future[Result], responseStatus: Int) = {
       Await.ready(response, 5.seconds)
