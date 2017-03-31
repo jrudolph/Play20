@@ -287,10 +287,17 @@ final case class AkkaRequestHeaders(
     key match {
       case HeaderNames.CONTENT_LENGTH => if (contentLength > 0) Some(contentLength.toString) else None
       case HeaderNames.CONTENT_TYPE => contentType
+      case HeaderNames.TRANSFER_ENCODING => if (isChunked) Some("chunked") else None
       case _ =>
         val lower = key.toLowerCase(Locale.ROOT)
         hs.collectFirst({ case h if h.lowercaseName == lower => h.value })
     }
+
+  override private[play] def hasHeader(key: String): Boolean = key match {
+    case HeaderNames.CONTENT_LENGTH => contentLength > 0
+    case HeaderNames.TRANSFER_ENCODING => isChunked
+    case _ => get(key).isDefined
+  }
 
   // note that these are rarely used, mostly just in tests
   override def getAll(key: String): immutable.Seq[String] =

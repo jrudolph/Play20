@@ -160,7 +160,7 @@ trait RequestHeader {
    */
   def hasBody: Boolean = {
     import HeaderNames._
-    headers.get(CONTENT_LENGTH).isDefined || headers.get(TRANSFER_ENCODING).isDefined
+    headers.hasHeader(CONTENT_LENGTH) || headers.hasHeader(TRANSFER_ENCODING)
   }
 
   /**

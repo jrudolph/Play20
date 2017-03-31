@@ -48,6 +48,9 @@ class Headers(protected var _headers: Seq[(String, String)]) {
    */
   def get(key: String): Option[String] = getAll(key).headOption
 
+  /** Returns whether the given header is defines */
+  private[play] def hasHeader(key: String): Boolean = toMap.contains(key)
+
   /**
    * Retrieve all header values associated with the given key.
    */
